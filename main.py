@@ -147,18 +147,18 @@ def run(date, over=1000):
                 column2.append(code)
                 continue
 
-        # 第三种情况 9点35分前有上千白单，且9点32至14点55分无上千买单或上千卖单
+        # 第三种情况 9点35分前有上千白单，且9点32至14点57分无1001以上买单或卖单
         condition1 = code_data[
             (code_data["time"] < datetime.time(9, 35)) & (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")]
         condition2 = code_data[
-            (datetime.time(9, 32) < code_data["time"]) & (code_data["time"] < datetime.time(14, 55)) & (
-                    code_data["volume"] >= 1000) & (
+            (datetime.time(9, 32) < code_data["time"]) & (code_data["time"] < datetime.time(14, 57)) & (
+                    code_data["volume"] >= 1001) & (
                 code_data["type"].isin(["买盘", "卖盘"]))]
         if (not condition1.empty) and condition2.empty:
             column3.append(code)
             continue
 
-        # 第四种情况 9点35分前有大于100、小于1000连续白单（夹单不超过五个），且9点32分至14点57分无901以上的买单或卖单
+        # 第四种情况 9点35分前有大于100、小于1000连续白单（夹单不超过五个），且9点32分至14点57分无901以上买单或卖单
         condition1 = code_data[
             (code_data["time"] < datetime.time(9, 35)) & (code_data["volume"] >= 100) & (code_data["volume"] < 1000) & (
                     code_data["type"] == "中性盘")]
@@ -222,4 +222,4 @@ def main(date=None):
 
 
 if __name__ == '__main__':
-    main(date="20190808")
+    main()
