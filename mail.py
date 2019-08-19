@@ -49,4 +49,4 @@ def send_mail(send_tos, name, subject, text, att_urls=None):
 
 if __name__ == "__main__":
     att_urls = ["result/20190808结果.xls"]
-    send_mail(send_tos=send_tos, name="Simon Yang", subject="20190808结果", text="请查收附件。", att_urls=att_urls)
+    send_mail(send_tos=send_tos, name="Simon Yang", subject="2019-08-08结果", text="请查收附件。", att_urls=att_urls)
