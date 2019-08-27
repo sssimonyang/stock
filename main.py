@@ -130,51 +130,62 @@ def run(date, over=1000):
         code_data['time'] = pd.to_datetime(code_data['time'], format="%H:%M:%S")
         code_data['time'] = code_data['time'].dt.time
 
-        # 第一种情况 9点35分前有上万白单
+        # 第一种情况 9点35分前有上万白单，且全天无10001以上买单或卖单
         condition = code_data[
-            (code_data["time"] < datetime.time(9, 35)) & (code_data["volume"] >= 10000) & (code_data["type"] == "中性盘")]
-        if not condition.empty:
+            (code_data["volume"] >= 10000) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
+
+        condition2 = code_data[
+            (code_data["volume"] >= 10001) & (code_data["type"].isin(["买盘", "卖盘"]))
+            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
+        if (not condition.empty) and condition2.empty:
             column1.append(code)
             continue
 
-        # 第二种情况 9点35分前有连续上千白单（夹单不超过五个）
+        # 第二种情况 9点35分前有连续上千白单（中间夹单不超过五个），且全天无9001以上买单或卖单
         condition = code_data[
-            (code_data["time"] < datetime.time(9, 35)) & (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")]
+            (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
         condition_index = list(condition.index)
-        if len(condition_index) >= 2:
+
+        condition2 = code_data[
+            (code_data["volume"] >= 9001) & (code_data["type"].isin(["买盘", "卖盘"]))
+            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
+
+        if len(condition_index) >= 2 and condition2.empty:
             delta = [condition_index[i + 1] - condition_index[i] for i in range(len(condition_index) - 1)]
             if min(delta) <= 6:
                 column2.append(code)
                 continue
 
-        # 第三种情况 9点35分前有上千白单，且9点32至14点57分无1001以上买单或卖单
+        # 第三种情况 9点35分前有上千白单，且全天无1001以上买单或卖单
         condition1 = code_data[
-            (code_data["time"] < datetime.time(9, 35)) & (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")]
+            (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
         condition2 = code_data[
-            (datetime.time(9, 32) < code_data["time"]) & (code_data["time"] < datetime.time(14, 57)) & (
-                    code_data["volume"] >= 1001) & (
-                code_data["type"].isin(["买盘", "卖盘"]))]
+            (code_data["volume"] >= 1001) & (code_data["type"].isin(["买盘", "卖盘"]))
+            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
         if (not condition1.empty) and condition2.empty:
             column3.append(code)
             continue
 
-        # 第四种情况 9点35分前有大于100、小于1000连续白单（夹单不超过五个），且9点32分至14点57分无901以上买单或卖单
+        # 第四种情况 9点35分前有连续白单（均大于100，小于1000）（中间夹单不超过五个），且全天无901以上买单或卖单
         condition1 = code_data[
-            (code_data["time"] < datetime.time(9, 35)) & (code_data["volume"] >= 100) & (code_data["volume"] < 1000) & (
-                    code_data["type"] == "中性盘")]
-        condition2 = code_data[(code_data["volume"] >= 901) & (
-            code_data["type"].isin(["买盘", "卖盘"])) & (datetime.time(9, 32) < code_data["time"]) & (
-                                       code_data["time"] < datetime.time(14, 57))]
+            (code_data["volume"] >= 100) & (code_data["volume"] < 1000) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
+        condition2 = code_data[
+            (code_data["volume"] >= 901) & (code_data["type"].isin(["买盘", "卖盘"]))
+            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
         condition1_index = list(condition1.index)
-        if condition2.empty:
-            if len(condition1_index) >= 2:
-                delta = [condition1_index[i + 1] - condition1_index[i] for i in range(len(condition1_index) - 1)]
-                if min(delta) <= 6:
-                    column4.append(code)
-                    continue
 
-        # 第五种情况 9点32分前有大于100、小于1000白单，且9点32分至14点57分无901以上买单或卖单
-        if condition2.empty and (not condition1.empty):
+        if len(condition1_index) >= 2 and condition2.empty:
+            delta = [condition1_index[i + 1] - condition1_index[i] for i in range(len(condition1_index) - 1)]
+            if min(delta) <= 6:
+                column4.append(code)
+                continue
+
+        # 第五种情况 9点32分前有白单（大于100，小于1000），且全天无901以上买单或卖单
+        if (not condition1.empty) and condition2.empty:
             column5.append(code)
             continue
 
@@ -190,6 +201,11 @@ def run(date, over=1000):
         for j, string in enumerate(column):
             ws.cell(row=j + 2, column=i + 1).value = string
     wb.save(f"result/{date}结果.xlsx")
+
+    for i, (codes, names) in enumerate(zip(final_data, final_name_data)):
+        for j, (code, name) in enumerate(zip(codes, names)):
+            ws.cell(row=j + 2, column=i + 1).value = name + code
+    wb.save(f"result/{date}结果供校验.xlsx")
 
     return
 
@@ -215,7 +231,7 @@ def main(date=None):
                f"总用时 {end - start} s\n" \
                f"请查收附件."
         send_mail(send_tos=send_tos, name="Simon Yang", subject=f"{date_print}结果", text=text,
-                  att_urls=[f"result/{date}结果.xlsx"])
+                  att_urls=[f"result/{date}结果.xlsx", f"result/{date}结果供校验.xlsx"])
     else:
         print(f"{date_print} 休市 无数据")
         # send_mail(send_tos=send_tos, name="Simon Yang", subject=f"{today_print}结果", text="今天休市，无数据")
