@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import argparse
 import asyncio
 import datetime
 import os
@@ -27,7 +28,7 @@ def now():
     return time.time()
 
 
-def download(date, all_codes, over):
+def download(date, all_codes, over, below):
     params["d"] = date
     semaphore = asyncio.Semaphore(200)
 
@@ -53,7 +54,7 @@ def download(date, all_codes, over):
                     print(f"{code} 无数据")
                     return
                 line = df.iloc[-1]
-                if line["type"] == "卖盘" and line["volume"] >= over:
+                if line["type"] == "卖盘" and below >= line["volume"] >= over:
                     line.name = code
                     df.to_excel(f"data/{date}/{code}.xls")
                     return line
@@ -88,7 +89,7 @@ def download(date, all_codes, over):
     return codes
 
 
-def run(date, over=1000):
+def run(date, download, over=900, below=10000):
     # 创建存储文件夹
     if not os.path.exists("data"):
         os.makedirs("data")
@@ -109,15 +110,14 @@ def run(date, over=1000):
     all_data = all_data.set_index(['code'])
 
     # 筛选 现手卖盘大于over的数据下载或读取
-    if not os.path.isdir(f"data/{date}"):
-        os.makedirs(f"data/{date}")
+    if download:
         download_start = now()
-        codes_data = download(date=date, all_codes=all_data.index, over=over)
+        codes_data = download(date=date, all_codes=all_data.index, over=over, below=below)
         download_end = now()
         print(f"下载用时 {download_end - download_start} s")
         codes_data.sort(key=lambda x: x["volume"], reverse=True)
         codes = [i.name for i in codes_data]
-        print(f"已下载 {date} 现手卖盘大于 {over} 的股票共计 {len(codes)} 个")
+        print(f"已下载 {date} 现手卖盘大于 {over} 小于 {below} 的股票共计 {len(codes)} 个")
     else:
         print("已有下载，正在读取相应目录")
         files = os.listdir(f"data/{date}")
@@ -217,17 +217,18 @@ def is_weekday(date):
     return resp.text != '暂无数据'
 
 
-def main(date=None):
-    if not date:
-        date = datetime.datetime.now().strftime("%Y%m%d")
+def main(date, download):
     date_print = datetime.datetime.strptime(date, "%Y%m%d").strftime("%Y-%m-%d")
     if is_weekday(date):
+        if not os.path.isdir(f"data/{date}"):
+            os.makedirs(f"data/{date}")
+            download = True
         start = now()
         print(f"{date_print} 有数据")
-        run(date)
+        run(date, download)
         end = now()
         print(f"总用时 {end - start} s")
-        text = f"今天是 {date_print}\n" \
+        text = f"{date_print}\n" \
                f"总用时 {end - start} s\n" \
                f"请查收附件."
         send_mail(send_tos=send_tos, name="Simon Yang", subject=f"{date_print}结果", text=text,
@@ -238,4 +239,12 @@ def main(date=None):
 
 
 if __name__ == '__main__':
-    main()
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--date", help="specify the date")
+    parser.add_argument('-D', "--download", help="specify whether to download", action='store_true')
+    args = parser.parse_args()
+    if args.date:
+        main(date=args.date, download=args.download)
+    else:
+        main(date=today, download=args.download)
