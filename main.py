@@ -89,7 +89,7 @@ def download(date, all_codes, over, below):
     return codes
 
 
-def run(date, download, over=900, below=10000):
+def run(date, force, over=900, below=10000):
     # 创建存储文件夹
     if not os.path.exists("data"):
         os.makedirs("data")
@@ -110,7 +110,7 @@ def run(date, download, over=900, below=10000):
     all_data = all_data.set_index(['code'])
 
     # 筛选 现手卖盘大于over的数据下载或读取
-    if download:
+    if force:
         download_start = now()
         codes_data = download(date=date, all_codes=all_data.index, over=over, below=below)
         download_end = now()
@@ -130,26 +130,27 @@ def run(date, download, over=900, below=10000):
         code_data['time'] = pd.to_datetime(code_data['time'], format="%H:%M:%S")
         code_data['time'] = code_data['time'].dt.time
 
-        # 第一种情况 9点35分前有上万白单，且全天无10001以上买单或卖单
+        # 第一种情况 9点35分前有上万白单，全天无大于10001的卖单或者卖单
         condition = code_data[
             (code_data["volume"] >= 10000) & (code_data["type"] == "中性盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
 
         condition2 = code_data[
-            (code_data["volume"] >= 10001) & (code_data["type"].isin(["买盘", "卖盘"]))
+            (code_data["volume"] > 10001) & (code_data["type"].isin(["买盘", "卖盘"]))
             & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
+
         if (not condition.empty) and condition2.empty:
             column1.append(code)
             continue
 
-        # 第二种情况 9点35分前有连续上千白单（中间夹单不超过五个），且全天无9001以上买单或卖单
+        # 第二种情况 9点35分前有连续上千白单，全天无大于9001的买单或者卖单
         condition = code_data[
             (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
         condition_index = list(condition.index)
 
         condition2 = code_data[
-            (code_data["volume"] >= 9001) & (code_data["type"].isin(["买盘", "卖盘"]))
+            (code_data["volume"] > 9001) & (code_data["type"].isin(["买盘", "卖盘"]))
             & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
 
         if len(condition_index) >= 2 and condition2.empty:
@@ -158,34 +159,42 @@ def run(date, download, over=900, below=10000):
                 column2.append(code)
                 continue
 
-        # 第三种情况 9点35分前有上千白单，且全天无1001以上买单或卖单
+        # 第三种情况 9点40分前有上千白单，全天无901以上买单或者卖单
         condition1 = code_data[
             (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+
         condition2 = code_data[
-            (code_data["volume"] >= 1001) & (code_data["type"].isin(["买盘", "卖盘"]))
+            (code_data["volume"] >= 901) & (code_data["type"] == "买盘")
+            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 30))]
+
+        condition3 = code_data[
+            (code_data["volume"] >= 901) & (code_data["type"] == "卖盘")
             & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
-        if (not condition1.empty) and condition2.empty:
+
+        if (not condition1.empty) and condition2.empty and condition3.empty:
             column3.append(code)
             continue
 
-        # 第四种情况 9点35分前有连续白单（均大于100，小于1000）（中间夹单不超过五个），且全天无901以上买单或卖单
+        # 第四种情况 9点40分前有连续白单（均大于100），全天无901以上买单或者卖单
         condition1 = code_data[
-            (code_data["volume"] >= 100) & (code_data["volume"] < 1000) & (code_data["type"] == "中性盘")
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 35))]
-        condition2 = code_data[
-            (code_data["volume"] >= 901) & (code_data["type"].isin(["买盘", "卖盘"]))
-            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
+            (code_data["volume"] > 100) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+
         condition1_index = list(condition1.index)
 
-        if len(condition1_index) >= 2 and condition2.empty:
+        if len(condition1_index) >= 2 and condition2.empty and condition3.empty:
             delta = [condition1_index[i + 1] - condition1_index[i] for i in range(len(condition1_index) - 1)]
             if min(delta) <= 6:
                 column4.append(code)
                 continue
 
-        # 第五种情况 9点32分前有白单（大于100，小于1000），且全天无901以上买单或卖单
-        if (not condition1.empty) and condition2.empty:
+        # 第五种情况 9点40分前有白单（大于100，小于1000），且全天无901以上买单或者卖单
+        condition1 = code_data[
+            (code_data["volume"] > 100) & (code_data["volume"] < 1000) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+
+        if (not condition1.empty) and condition2.empty and condition3.empty:
             column5.append(code)
             continue
 
@@ -217,15 +226,15 @@ def is_weekday(date):
     return resp.text != '暂无数据'
 
 
-def main(date, download):
+def main(date, force):
     date_print = datetime.datetime.strptime(date, "%Y%m%d").strftime("%Y-%m-%d")
     if is_weekday(date):
         if not os.path.isdir(f"data/{date}"):
             os.makedirs(f"data/{date}")
-            download = True
+            force = True
         start = now()
         print(f"{date_print} 有数据")
-        run(date, download)
+        run(date, force)
         end = now()
         print(f"总用时 {end - start} s")
         text = f"{date_print}\n" \
@@ -242,9 +251,9 @@ if __name__ == '__main__':
     today = datetime.datetime.now().strftime("%Y%m%d")
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--date", help="specify the date")
-    parser.add_argument('-D', "--download", help="specify whether to download", action='store_true')
+    parser.add_argument('-f', "--force", help="specify whether to download", action='store_true')
     args = parser.parse_args()
     if args.date:
-        main(date=args.date, download=args.download)
+        main(date=args.date, force=args.force)
     else:
-        main(date=today, download=args.download)
+        main(date=today, force=args.force)
