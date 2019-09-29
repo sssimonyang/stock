@@ -89,7 +89,7 @@ def download(date, all_codes, over, below):
     return codes
 
 
-def run(date, force, over=900, below=10000):
+def run(date, over=800, below=10000):
     # 创建存储文件夹
     if not os.path.exists("data"):
         os.makedirs("data")
@@ -102,6 +102,7 @@ def run(date, force, over=900, below=10000):
     column3 = []
     column4 = []
     column5 = []
+    column6 = []
 
     # 读取待查询股票
     all_data = pd.read_excel(codes_path)
@@ -109,19 +110,14 @@ def run(date, force, over=900, below=10000):
     all_data.code = all_data.code.str.replace("SZ", "sz").str.replace("SH", "sh")
     all_data = all_data.set_index(['code'])
 
-    # 筛选 现手卖盘大于over的数据下载或读取
-    if force:
-        download_start = now()
-        codes_data = download(date=date, all_codes=all_data.index, over=over, below=below)
-        download_end = now()
-        print(f"下载用时 {download_end - download_start} s")
-        codes_data.sort(key=lambda x: x["volume"], reverse=True)
-        codes = [i.name for i in codes_data]
-        print(f"已下载 {date} 现手卖盘大于 {over} 小于 {below} 的股票共计 {len(codes)} 个")
-    else:
-        print("已有下载，正在读取相应目录")
-        files = os.listdir(f"data/{date}")
-        codes = [i[:-4] for i in files]
+    # 筛选 现手卖盘大于over小于below的数据下载或读取
+    download_start = now()
+    codes_data = download(date=date, all_codes=all_data.index, over=over, below=below)
+    download_end = now()
+    print(f"下载用时 {download_end - download_start} s")
+    codes_data.sort(key=lambda x: x["volume"], reverse=True)
+    codes = [i.name for i in codes_data]
+    print(f"已下载 {date} 现手卖盘大于 {over} 小于 {below} 的股票共计 {len(codes)} 个")
 
     # 情况1-5筛选
     for code in codes:
@@ -189,18 +185,36 @@ def run(date, force, over=900, below=10000):
                 column4.append(code)
                 continue
 
-        # 第五种情况 9点40分前有白单（大于100，小于1000），且全天无901以上买单或者卖单
+        # 第五种情况 9点40分钱有白单（大于10），9点40分前无101以上买单或者卖单，10点前无101以上卖单
+        # 且全天无901以上买单或者卖单
+        condition1 = code_data[
+            (code_data["volume"] > 10) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+
+        condition4 = code_data[
+            (code_data["volume"] >= 101) & (code_data["type"].isin(["买盘", "卖盘"]))
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+
+        condition5 = code_data[
+            (code_data["volume"] >= 101) & (code_data["type"] == "卖盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(10, 0))]
+
+        if (not condition1.empty) and condition2.empty and condition3.empty and condition4.empty and condition5.empty:
+            column5.append(code)
+            continue
+
+        # 第六种情况 9点40分前有白单（大于100，小于1000），且全天无901以上买单或者卖单
         condition1 = code_data[
             (code_data["volume"] > 100) & (code_data["volume"] < 1000) & (code_data["type"] == "中性盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
 
         if (not condition1.empty) and condition2.empty and condition3.empty:
-            column5.append(code)
+            column6.append(code)
             continue
 
     # 数据汇总
-    final_data = [column1, column2, column3, column4, column5]
-    print(f"情况 1~5 符合条件数目 {[len(item) for item in final_data]}")
+    final_data = [column1, column2, column3, column4, column5, column6]
+    print(f"情况 1~6 符合条件数目 {[len(item) for item in final_data]}")
     final_name_data = [[all_data.loc[i]["name"] for i in j] for j in final_data]
 
     # 写出
@@ -226,15 +240,14 @@ def is_weekday(date):
     return resp.text != '暂无数据'
 
 
-def main(date, force):
+def main(date):
     date_print = datetime.datetime.strptime(date, "%Y%m%d").strftime("%Y-%m-%d")
     if is_weekday(date):
         if not os.path.isdir(f"data/{date}"):
             os.makedirs(f"data/{date}")
-            force = True
         start = now()
         print(f"{date_print} 有数据")
-        run(date, force)
+        run(date)
         end = now()
         print(f"总用时 {end - start} s")
         text = f"{date_print}\n" \
@@ -251,9 +264,8 @@ if __name__ == '__main__':
     today = datetime.datetime.now().strftime("%Y%m%d")
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--date", help="specify the date")
-    parser.add_argument('-f', "--force", help="specify whether to download", action='store_true')
     args = parser.parse_args()
     if args.date:
-        main(date=args.date, force=args.force)
+        main(date=args.date)
     else:
-        main(date=today, force=args.force)
+        main(date=today)

@@ -5,4 +5,4 @@ conda install xlrd xlwt openpyxl pandas aiohttp requests
 服务器设置定时任务  
 service crond start  
 crontab -e  
-0 18 * * * ~/main.sh >> /home/python/stock/log 2>&1 &  
+00 20 * * * /root/main.sh >> /home/log 2>&1 &
