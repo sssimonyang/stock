@@ -80,8 +80,8 @@ def download(date, all_codes, over, below):
             print(f"{code} 当日无交易")
             continue
         line = df.iloc[-1]
+        line.name = code
         if line["type"] == "卖盘" and below >= line["volume"] >= over:
-            line.name = code
             codes.append(line)
             df.to_excel(f"data/{date}/{code}.xls")
 
@@ -102,7 +102,7 @@ def download(date, all_codes, over, below):
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(10, 0))]
 
         if condition1.empty and condition2.empty:
-            column5_data.append(df.iloc[-1])
+            column5_data.append(line)
 
         # 第六种情况 9点40分前有白单（大于等于10），其后有白单（大于等于10），其后有白单（大于等于10），且全天无901以上买单或者卖单
         condition1 = code_data[
@@ -119,7 +119,7 @@ def download(date, all_codes, over, below):
                 added = True
                 break
         if added:
-            column6_data.append(df.iloc[-1])
+            column6_data.append(line)
 
     return codes, column5_data, column6_data
 
