@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 import argparse
-import asyncio
 import datetime
 import os
 import time
 from io import StringIO
 
-import aiohttp
 import pandas as pd
 import requests
 from openpyxl import load_workbook
@@ -29,80 +27,137 @@ def now():
 
 
 def download(date, all_codes, over, below):
-    params["d"] = date
-    semaphore = asyncio.Semaphore(200)
-
-    async def download_one(code):
-        params["c"] = code
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
-                if resp and resp.status == 200:
-                    data = await resp.text(encoding="gbk")
-                    return data
-                else:
-                    print(f"{code} failed")
-                    return
-
-    async def process_one(code):
-        async with semaphore:
-            data = await download_one(code)
-            if data and data != "暂无数据":
-                df = pd.read_csv(StringIO(data), sep="\t",
-                                 names=['time', 'price', 'change', 'volume', 'amount', 'type'],
-                                 skiprows=[0])
-                if df.shape[0] == 0:
-                    print(f"{code} 无数据")
-                    return
-                line = df.iloc[-1]
-                if line["type"] == "卖盘" and below >= line["volume"] >= over:
-                    line.name = code
-                    df.to_excel(f"data/{date}/{code}.xls")
-                    return line
-
-    tasks = [asyncio.ensure_future(process_one(code)) for code in all_codes]
-    event_loop = asyncio.get_event_loop()
-    event_loop.run_until_complete(asyncio.wait(tasks))
-    codes = [task.result() for task in tasks]
-    codes = list(filter(lambda x: x is not None, codes))
-
     # params["d"] = date
-    # codes = []
-    # download_start = now()
-    # for code in all_codes:
+    # semaphore = asyncio.Semaphore(200)
+    #
+    # async def download_one(code):
     #     params["c"] = code
-    #     res = requests.get(url, params=params)
-    #     if res.status_code != 200:
-    #         print(f"{code} failed")
-    #     res.encoding = "gbk"
-    #     df = pd.read_table(StringIO(res.text), names=['time', 'price', 'change', 'volume', 'amount', 'type'],
-    #                        skiprows=[0])
-    #     if df.shape[0] == 0:
-    #         continue
-    #     line = df.iloc[-1]
-    #     if line["type"] == "卖盘" and line["volume"] >= over:
-    #         line.name = code
-    #         codes.append(line)
-    #         df.to_excel(f"data/{date}/{code}.xls")
-    # download_end = now()
-    # print(f"下载用时 {download_end - download_start} s")
+    #     async with aiohttp.ClientSession() as session:
+    #         async with session.get(url, params=params) as resp:
+    #             if resp and resp.status == 200:
+    #                 data = await resp.text(encoding="gbk")
+    #                 return data
+    #             else:
+    #                 print(f"{code} failed")
+    #                 return
+    #
+    # async def process_one(code):
+    #     async with semaphore:
+    #         data = await download_one(code)
+    #         if data and data != "暂无数据":
+    #             df = pd.read_csv(StringIO(data), sep="\t",
+    #                              names=['time', 'price', 'change', 'volume', 'amount', 'type'],
+    #                              skiprows=[0])
+    #             if df.shape[0] == 0:
+    #                 print(f"{code} 无数据")
+    #                 return
+    #             line = df.iloc[-1]
+    #             if line["type"] == "卖盘" and below >= line["volume"] >= over:
+    #                 line.name = code
+    #                 df.to_excel(f"data/{date}/{code}.xls")
+    #                 return line
+    #
+    # tasks = [asyncio.ensure_future(process_one(code)) for code in all_codes]
+    # event_loop = asyncio.get_event_loop()
+    # event_loop.run_until_complete(asyncio.wait(tasks))
+    # codes = [task.result() for task in tasks]
+    # codes = list(filter(lambda x: x is not None, codes))
 
-    return codes
+    params["d"] = date
+    codes = []
+    column5_data = []
+    column6_data = []
+    for code in all_codes:
+        params["c"] = code
+        res = requests.get(url, params=params)
+        res.encoding = "gbk"
+        if res.status_code != 200 or res.text == "暂无数据":
+            print(f"{code} 下载失败")
+            continue
+        df = pd.read_table(StringIO(res.text), names=['time', 'price', 'change', 'volume', 'amount', 'type'],
+                           skiprows=[0])
+        if df.shape[0] == 0:
+            print(f"{code} 当日无交易")
+            continue
+        line = df.iloc[-1]
+        if line["type"] == "卖盘" and below >= line["volume"] >= over:
+            line.name = code
+            codes.append(line)
+            df.to_excel(f"data/{date}/{code}.xls")
+
+        code_data = df
+        code_data['time'] = pd.to_datetime(code_data['time'], format="%H:%M:%S")
+        code_data['time'] = code_data['time'].dt.time
+
+        if not condition(code_data):
+            continue
+
+        # 第五种情况 9点40分前无101以上买单或者卖单，10点前无101以上卖单，且全天无901以上买单或者卖单
+        condition1 = code_data[
+            (code_data["volume"] >= 101) & (code_data["type"].isin(["买盘", "卖盘"]))
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+
+        condition2 = code_data[
+            (code_data["volume"] >= 101) & (code_data["type"] == "卖盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(10, 0))]
+
+        if condition1.empty and condition2.empty:
+            column5_data.append(df.iloc[-1])
+
+        # 第六种情况 9点40分前有白单（大于等于10），其后有白单（大于等于10），其后有白单（大于等于10），且全天无901以上买单或者卖单
+        condition1 = code_data[
+            (code_data["volume"] >= 10) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+        condition1_index = list(condition1.index)
+        for_query = code_data[
+            (code_data["volume"] >= 10) & (code_data["type"] == "中性盘")
+            & (code_data["time"] > datetime.time(9, 30))]
+        for_query_index = list(for_query.index)
+        added = False
+        for i in condition1_index:
+            if len(set(for_query_index) & {i, i + 1, i + 2}) == 3:
+                added = True
+                break
+        if added:
+            column6_data.append(df.iloc[-1])
+
+    return codes, column5_data, column6_data
 
 
-def run(date, over=900, below=10000):
+def condition(code_data):
+    """
+    全天无901以上买单或者卖单条件限定
+    :param code_data: dataframe
+    :return: Boolean
+    """
+    condition2 = code_data[
+        (code_data["volume"] >= 901) & (code_data["type"] == "买盘")
+        & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 30))]
+
+    condition3 = code_data[
+        (code_data["volume"] >= 901) & (code_data["type"] == "卖盘")
+        & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
+
+    if condition2.empty and condition3.empty:
+        return True
+    else:
+        return False
+
+
+def run(date, over=1000, below=10000):
     # 创建存储文件夹
     if not os.path.exists("data"):
         os.makedirs("data")
     if not os.path.exists("result"):
         os.makedirs("result")
 
-    # 存储情况1~5的code
+    # 存储情况1~7的code
     column1 = []
     column2 = []
     column3 = []
     column4 = []
-    column5 = []
-    column6 = []
+    # column5 = []
+    # column6 = []
     column7 = []
 
     # 读取待查询股票
@@ -111,13 +166,17 @@ def run(date, over=900, below=10000):
     all_data.code = all_data.code.str.replace("SZ", "sz").str.replace("SH", "sh")
     all_data = all_data.set_index(['code'])
 
-    # 筛选 现手卖盘大于over小于below的数据下载或读取
+    # 筛选 现手卖盘大于over小于below的数据下载,情况5-6筛选
     download_start = now()
-    codes_data = download(date=date, all_codes=all_data.index, over=over, below=below)
+    codes_data, column5_data, column6_data = download(date=date, all_codes=all_data.index, over=over, below=below)
     download_end = now()
     print(f"下载用时 {download_end - download_start} s")
     codes_data.sort(key=lambda x: x["volume"], reverse=True)
     codes = [i.name for i in codes_data]
+    column5_data.sort(key=lambda x: x["volume"], reverse=True)
+    column5 = [i.name for i in column5_data]
+    column6_data.sort(key=lambda x: x["volume"], reverse=True)
+    column6 = [i.name for i in column6_data]
     print(f"已下载 {date} 现手卖盘大于 {over} 小于 {below} 的股票共计 {len(codes)} 个")
 
     # 情况1-6筛选
@@ -128,7 +187,7 @@ def run(date, over=900, below=10000):
         code_data['time'] = code_data['time'].dt.time
 
         # 第一种情况 9点40分前有上万白单，全天无大于10001的卖单或者卖单
-        condition = code_data[
+        condition1 = code_data[
             (code_data["volume"] >= 10000) & (code_data["type"] == "中性盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
 
@@ -136,36 +195,28 @@ def run(date, over=900, below=10000):
             (code_data["volume"] > 10001) & (code_data["type"].isin(["买盘", "卖盘"]))
             & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
 
-        if (not condition.empty) and condition2.empty:
+        if (not condition1.empty) and condition2.empty:
             column1.append(code)
             continue
 
         # 第二种情况 9点40分前有连续上千白单，全天无大于9001的买单或者卖单
-        condition = code_data[
+        condition1 = code_data[
             (code_data["volume"] >= 1000) & (code_data["type"] == "中性盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
-        condition_index = list(condition.index)
+        condition1_index = list(condition1.index)
 
         condition2 = code_data[
             (code_data["volume"] > 9001) & (code_data["type"].isin(["买盘", "卖盘"]))
             & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
 
-        if len(condition_index) >= 2 and condition2.empty:
-            delta = [condition_index[i + 1] - condition_index[i] for i in range(len(condition_index) - 1)]
+        if len(condition1_index) >= 2 and condition2.empty:
+            delta = [condition1_index[i + 1] - condition1_index[i] for i in range(len(condition1_index) - 1)]
             if min(delta) <= 6:
                 column2.append(code)
                 continue
 
         # 全天无901以上买单或者卖单条件限定
-        condition2 = code_data[
-            (code_data["volume"] >= 901) & (code_data["type"] == "买盘")
-            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 30))]
-
-        condition3 = code_data[
-            (code_data["volume"] >= 901) & (code_data["type"] == "卖盘")
-            & (code_data["time"] > datetime.time(9, 32)) & (code_data["time"] < datetime.time(14, 57))]
-
-        if not (condition2.empty and condition3.empty):
+        if not condition(code_data):
             continue
 
         # 第三种情况 9点40分前有上千白单，全天无901以上买单或者卖单
@@ -190,39 +241,7 @@ def run(date, over=900, below=10000):
                 column4.append(code)
                 continue
 
-        # 第五种情况 9点40分前无101以上买单或者卖单，10点前无101以上卖单，且全天无901以上买单或者卖单
-        condition4 = code_data[
-            (code_data["volume"] >= 101) & (code_data["type"].isin(["买盘", "卖盘"]))
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
-
-        condition5 = code_data[
-            (code_data["volume"] >= 101) & (code_data["type"] == "卖盘")
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(10, 0))]
-
-        if condition4.empty and condition5.empty:
-            column5.append(code)
-            continue
-
-        # 第六种情况 9点40分前有白单（大于等于10），其后有白单（大于等于10），其后有白单（大于等于10），且全天无901以上买单或者卖单
-        condition1 = code_data[
-            (code_data["volume"] >= 10) & (code_data["type"] == "中性盘")
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
-        condition1_index = list(condition1.index)
-        for_query = code_data[
-            (code_data["volume"] >= 10) & (code_data["type"] == "中性盘")
-            & (code_data["time"] > datetime.time(9, 30))]
-        for_query_index = list(for_query.index)
-        added = False
-
-        for i in condition1_index:
-            if len(set(for_query_index) & {i, i + 1, i + 2}) == 3:
-                added = True
-                break
-        if added:
-            column6.append(code)
-            continue
-
-        # 第六种情况 9点40分前有白单（大于100，小于1000），且全天无901以上买单或者卖单
+        # 第七种情况 9点40分前有白单（大于100，小于1000），且全天无901以上买单或者卖单
         condition1 = code_data[
             (code_data["volume"] > 100) & (code_data["volume"] < 1000) & (code_data["type"] == "中性盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
