@@ -118,14 +118,14 @@ def run(date, over=1000, below=10000):
     all_data.columns = ["code", "name"]
     all_data.code = all_data.code.str.replace("SZ", "sz").str.replace("SH", "sh")
 
-    # 筛选 现手卖盘大于over小于below的数据下载或读取
+    # 下载所有数据
     download_start = now()
     codes_data = download(date=date, all_codes=all_data.itertuples())
     download_end = now()
     print(f"下载用时 {download_end - download_start} s")
     codes_data.sort(key=lambda x: (x.volume, map_type_to_num[x.type]), reverse=True)
 
-    # 情况5,6 现手300以上 情况5 成交金额大于2000万
+    # 情况5,6 现手300以上 情况5 成交金额大于1600万
     for single_code in codes_data:
         if not (single_code.volume > 300 and single_code.type == "卖盘"):
             continue
@@ -139,7 +139,7 @@ def run(date, over=1000, below=10000):
         if not condition(code_data):
             continue
 
-        # 情况5：9点40分前无101以上买单或者卖单，10点前无101以上卖单，且全天无901以上买单或者卖单，现手300以上，成交金额大于2000万
+        # 情况5：9点40分前无101以上买单或者卖单，10点前无101以上卖单，且全天无901以上买单或者卖单，现手300以上，成交金额大于1600万
         condition1 = code_data[
             (code_data["volume"] >= 101) & (code_data["type"].isin(["买盘", "卖盘"]))
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
@@ -148,7 +148,7 @@ def run(date, over=1000, below=10000):
             (code_data["volume"] >= 101) & (code_data["type"] == "卖盘")
             & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(10, 0))]
 
-        if condition1.empty and condition2.empty and single_code.volume > 2000_0000:
+        if condition1.empty and condition2.empty and single_code.amount > 1600_0000:
             column5.append(single_code)
 
         # 情况6：9点40分前有白单（大于等于10），其后有白单（大于等于10），其后有白单（大于等于10），且全天无901以上买单或者卖单，现手300以上
