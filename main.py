@@ -142,11 +142,11 @@ def run(date, over=1000, below=10000):
         # 情况5：9点40分前无101以上买单或者卖单，10点前无101以上卖单，且全天无901以上买单或者卖单，现手300以上，成交金额大于1600万
         condition1 = code_data[
             (code_data["volume"] >= 101) & (code_data["type"].isin(["买盘", "卖盘"]))
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(9, 40))]
+            & (code_data["time"] > datetime.time(9, 31)) & (code_data["time"] < datetime.time(9, 40))]
 
         condition2 = code_data[
             (code_data["volume"] >= 101) & (code_data["type"] == "卖盘")
-            & (code_data["time"] > datetime.time(9, 30)) & (code_data["time"] < datetime.time(10, 0))]
+            & (code_data["time"] > datetime.time(9, 31)) & (code_data["time"] < datetime.time(10, 0))]
 
         if condition1.empty and condition2.empty and single_code.amount > 1600_0000:
             column5.append(single_code)
