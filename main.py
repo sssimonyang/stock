@@ -290,9 +290,9 @@ def main(date, myself):
         print(f"{date_print} 有数据")
         run(date)
         end = now()
-        print(f"总用时 {end - start} s")
+        print(f"总用时 {(end - start):.1f} s")
         text = f"{date_print}\n" \
-               f"总用时 {end - start} s\n" \
+               f"总用时 {(end - start):.1f} s\n" \
                f"请查收附件."
         people_send_to = send_to_myself if myself else send_tos
         send_mail(send_tos=people_send_to, name="Simon Yang", subject=f"{date_print}结果", text=text,
